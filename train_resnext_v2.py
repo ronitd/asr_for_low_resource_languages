@@ -8,7 +8,6 @@ import sys
 
 import numpy as np 
 from tqdm import tqdm 
-# from torch_baidu_ctc import ctc_loss, CTCLoss
 from deepspeech_src.cpc_data_loader_bao import MFCCDataset, MFCCBucketingSampler, MFCCDataLoader, PrecomputedMFCCDataset, RawAudioDataset, RawAudioBucketingSampler, RawAudioDataLoader, LogMelDataset, LogMelDataLoader
 #from deepspeech_src.cpc_data_loader_phoneme import MFCCDataset, MFCCBucketingSampler, MFCCDataLoader, PrecomputedMFCCDataset, RawAudioDataset, RawAudioBucketingSampler, RawAudioDataLoader, LogMelDataset, LogMelDataLoader
 
@@ -16,7 +15,6 @@ from deepspeech_src.decoder_char import GreedyDecoder, BeamCTCDecoder
 from deepspeech_src.decoder import GreedyDecoder, BeamCTCDecoder 
 #from deepspeech_src.model import ResNextASR_v2
 from deepspeech_src.resnext_v2_model import ResNextASR_v2
-#from src.models import Wav2Vec
 from deepspeech_src.utils_bao import check_loss, read_csv_deepspeech, read_label_file, read_csv_mfccs
 from deepspeech_src.logger import TensorboardLogger
 
@@ -136,7 +134,7 @@ if __name__ == "__main__":
 		#TODO: Implement a way to load model 
 		#Read labels: 
 		labels = read_label_file(args.alphabet)
-		if ('_' not in labels): 
+		if '_' not in labels:
 			print("Adding CTC blank to labels")
 			labels = '_' + labels
 		print("labels: {}".format(labels))
@@ -147,74 +145,37 @@ if __name__ == "__main__":
 				print("Adding CTC blank to old labels") 
 				old_labels = '_' + old_labels 
 			print("Old labels: {}".format(old_labels))
+		num_classes = len(old_labels) if args.transfer else len(labels)
 
-		if args.transfer: 
-			if args.cpc_model_path is not None: 
-				model = ResNextASR_v2(
-					num_features = 256, 
-					num_classes = len(old_labels), 
-					dense_dim=256,
-					bottleneck_depth=16
-				)
-			else: 
-				model = ResNextASR_v2(
-					num_features = 39, 
-					num_classes = len(old_labels), 
-					dense_dim=args.dense_dim,
-					bottleneck_depth=args.bottleneck_depth,
-					args = args
-
-				)
-		else: 
-			if args.cpc_model_path is not None: 
-				model = ResNextASR_v2(
-					num_features = 256, 
-					num_classes = len(labels), 
-					dense_dim=args.dense_dim,
-					bottleneck_depth=16
-				)
-			else: 
-				model = ResNextASR_v2(
-					num_features = 128, 
-					num_classes = len(labels), 
-					dense_dim=args.dense_dim,
-					bottleneck_depth=args.bottleneck_depth,
-					args = args
-
-				)
+		model = ResNextASR_v2(
+			num_features=128,
+			num_classes=num_classes,
+			dense_dim=args.dense_dim,
+			bottleneck_depth=args.bottleneck_depth,
+			args=args
+		)
 
 		if args.use_beamsearch: 
 			decoder = BeamCTCDecoder(labels, lm_path = args.lm_path, alpha=args.lm_alpha, beta=args.lm_beta, beam_width=args.beam_width) 
 		else: 
 			decoder = GreedyDecoder(labels) 
 
-		if args.cpc_model_path is None:
-			if args.use_preprocessed: 
-				train_dataset = LogMelDataset(train_paths[:7000], train_transcripts[:7000], labels)
-			else: 
-				train_dataset = MFCCDataset(train_paths, train_transcripts, labels)
-			if args.use_preprocessed:
-				val_dataset = LogMelDataset(val_paths, val_transcripts, labels) 
-			else:
-				val_dataset = MFCCDataset(val_paths, val_transcripts, labels) 
+		if args.use_preprocessed:
+			train_dataset = LogMelDataset(train_paths[:7000], train_transcripts[:7000], labels)
+		else:
+			train_dataset = MFCCDataset(train_paths, train_transcripts, labels)
+		if args.use_preprocessed:
+			val_dataset = LogMelDataset(val_paths, val_transcripts, labels)
+		else:
+			val_dataset = MFCCDataset(val_paths, val_transcripts, labels)
 
-			train_sampler = MFCCBucketingSampler(train_dataset, batch_size=args.batch_size)
-			train_loader = LogMelDataLoader(train_dataset, num_workers=args.num_workers, batch_sampler=train_sampler)
+		train_sampler = MFCCBucketingSampler(train_dataset, batch_size=args.batch_size)
+		train_loader = LogMelDataLoader(train_dataset, num_workers=args.num_workers, batch_sampler=train_sampler)
 
-			val_sampler = MFCCBucketingSampler(val_dataset, batch_size=args.batch_size)
-			val_loader = LogMelDataLoader(val_dataset, num_workers=args.num_workers, batch_sampler=val_sampler)
-		else: 
-			train_dataset = RawAudioDataset(train_paths, train_transcripts, labels) 
-			val_dataset = RawAudioDataset(val_paths, val_transcripts, labels)
+		val_sampler = MFCCBucketingSampler(val_dataset, batch_size=args.batch_size)
+		val_loader = LogMelDataLoader(val_dataset, num_workers=args.num_workers, batch_sampler=val_sampler)
 
-			train_sampler = RawAudioBucketingSampler(train_dataset, batch_size=args.batch_size)
-			train_loader = RawAudioDataLoader(train_dataset, num_workers = args.num_workers, batch_sampler=train_sampler)
-
-			val_sampler = RawAudioBucketingSampler(val_dataset, batch_size=args.batch_size)
-			val_loader = RawAudioDataLoader(val_dataset, num_workers = args.num_workers, batch_sampler=val_sampler)
-
-
-		if(args.continue_from is not None): 
+		if args.continue_from is not None:
 			print("Loading model from: {}".format(args.continue_from))
 			package = torch.load(args.continue_from)
 			state_dict = package['state_dict']
@@ -245,23 +206,6 @@ if __name__ == "__main__":
 		# xs contains the length of each x in the sample (1D tensor, each element = len(x[:, n, :]))
 		# ys contains the length of each target (sum(ys) = len(y))
 		criterion = torch.nn.CTCLoss(blank=decoder.blank_index)
-
-		#Initializing CPC model
-		if args.cpc_model_path is not None: 
-			wav2vec = Wav2Vec(
-				timestep=12, 
-				batch_size=args.batch_size, 
-				z_dim=512,
-				c_dim=256
-			).to(device)
-			print("Path to CPC: {}".format(args.cpc_model_path))
-			wav2vec.load_state_dict(torch.load(args.cpc_model_path)['state_dict'])
-			wav2vec.eval()
-
-		# #Set the CPC to eval mode -- for dropout, BN, etc...
-		# cpc_model.eval()
-		# # print("CPC Model: ")
-		# # print(cpc_model)
 
 		batch_time = AverageMeter() 
 		data_time = AverageMeter() 
@@ -297,22 +241,7 @@ if __name__ == "__main__":
 
 				data_time.update(time.time() - end) 
 				inputs = inputs.float().to(device)
-
-				#Apply CPC
-				if args.cpc_model_path is not None:
-					with torch.no_grad(): 
-						context = wav2vec.predict(inputs.transpose(1,2))
-						# context, hidden = cpc_model.predict(inputs.transpose(1,2), cpc_hidden)
-
-				#print("After CPC: {}".format(context.shape))
-				#out: [batch x seq_len // 160 x alphabet size]
-				#Note: currently using input_lengths --- maybe we can use input_sizes?
-				#out, output_sizes = model(inputs.transpose(1,2), input_sizes)
-				#print("Inputs shape: {}".format(inputs.shape)) 
-				if args.cpc_model_path is not None:
-					out = model(context)
-				else:  
-					out = model(inputs)
+				out = model(inputs)
 
 				output_sizes = torch.full((len(inputs),), out.shape[2], dtype=torch.long)
 				#print("Shape of output_sizes: {}".format(output_sizes))
@@ -391,11 +320,7 @@ if __name__ == "__main__":
 					
 					#Put the CPC output through the DeepSpeech 
 					#input_lengths = torch.IntTensor(context.shape[1])
-					if args.cpc_model_path is not None: 
-						context = wav2vec.predict(inputs.transpose(1,2))
-						out = model(context)
-					else: 
-						out = model(inputs)
+					out = model(inputs)
 
 					float_out = out.float() 
 					
@@ -470,16 +395,7 @@ if __name__ == "__main__":
 
 			if (total_loss < lowest_loss or cer < lowest_cer):
 				print("Find newest model at epoch: {}. Saving at: {}".format(epoch, args.final_model_path))
-				#Save this epoch 
-				# if args.no_glu: 
-				# 	torch.save(Wav2Letter_pp_conv.serialize(model, optimizer=optimizer, epoch=epoch, 
-				# 									loss_results=loss_results, wer_results=wer_results, cer_results=cer_results), 
-				# 	args.final_model_path)
-				# else: 
-				# 	torch.save(Wav2Letter_pp.serialize(model, optimizer=optimizer, epoch=epoch, 
-				# 									loss_results=loss_results, wer_results=wer_results, cer_results=cer_results), 
-				# 	args.final_model_path)
-
+				#Save this epoch
 				torch.save(ResNextASR_v2.serialize(model, optimizer=optimizer, epoch=epoch, 
 													loss_results=loss_results, wer_results=wer_results, cer_results=cer_results), 
 							args.final_model_path)
@@ -501,38 +417,24 @@ if __name__ == "__main__":
 			labels = '_' + labels
 		print("labels: {}".format(labels))
 		print("Length of Alphabet: ", len(labels))
-		if args.cpc_model_path is not None: 
-			model = ResNextASR_v2(
-				num_features = 256, 
-				num_classes = len(labels), 
-				dense_dim=256, 
-				bottleneck_depth=16
-			)
-		else: 
-			model = ResNextASR_v2(
-					num_features = 80, 
-					num_classes = len(labels), 
-					dense_dim=args.dense_dim,
-					bottleneck_depth=args.bottleneck_depth,
-					args = args
 
-			)
+		model = ResNextASR_v2(
+				num_features=80,
+				num_classes=len(labels),
+				dense_dim=args.dense_dim,
+				bottleneck_depth=args.bottleneck_depth,
+				args=args
+
+		)
 		if args.use_beamsearch: 
 			decoder = BeamCTCDecoder(labels, lm_path = args.lm_path, alpha=args.lm_alpha, beta=args.lm_beta, beam_width=args.beam_width, trie=args.trie) 
 		else: 
 			decoder = GreedyDecoder(labels) 
 
-		if args.cpc_model_path is None:
-			test_dataset = LogMelDataset(test_paths, test_transcripts, labels) 
-			# test_sampler = MFCCBucketingSampler(test_dataset, batch_size=args.batch_size)
-			# test_loader = MFCCDataLoader(test_dataset, num_workers=args.num_workers, batch_sampler=test_sampler)
-			# test_dataset = PrecomputedMFCCDataset(test_paths, test_transcripts, labels) 
-			test_sampler = MFCCBucketingSampler(test_dataset, batch_size=args.batch_size)
-			test_loader = LogMelDataLoader(test_dataset, num_workers=args.num_workers, batch_sampler=test_sampler)
-		else: 
-			test_dataset = RawAudioDataset(test_paths, test_transcripts, labels) 
-			test_sampler = RawAudioBucketingSampler(test_dataset, batch_size=args.batch_size)
-			test_loader = RawAudioDataLoader(test_dataset, num_workers = args.num_workers, batch_sampler=test_sampler)
+		test_dataset = LogMelDataset(test_paths, test_transcripts, labels)
+		test_sampler = MFCCBucketingSampler(test_dataset, batch_size=args.batch_size)
+		test_loader = LogMelDataLoader(test_dataset, num_workers=args.num_workers, batch_sampler=test_sampler)
+
 
 		if(args.continue_from is not None): 
 			print("Loading model from: {}".format(args.continue_from))
@@ -560,21 +462,9 @@ if __name__ == "__main__":
 
 		criterion = torch.nn.CTCLoss(blank=decoder.blank_index)
 
-		#Initializing CPC model
-		if args.cpc_model_path is not None: 
-			wav2vec = Wav2Vec(
-				timestep=12, 
-				batch_size=args.batch_size, 
-				z_dim=512,
-				c_dim=256
-			).to(device)
-			print("Path to CPC: {}".format(args.cpc_model_path))
-			wav2vec.load_state_dict(torch.load(args.cpc_model_path)['state_dict'])
-			wav2vec.eval()
 		if not args.sweep_decode: 
 			if True: 
-			# if args.cpc_model_path is None:
-				end = time.time() 
+				end = time.time()
 				start_epoch_time = time.time() 
 
 				avg_data_time = 0 
@@ -608,14 +498,8 @@ if __name__ == "__main__":
 						# input_sizes_np = to_np(input_sizes)
 						# input_sizes_np = (np.floor_divide(input_sizes_np, 160))
 						# input_sizes = torch.from_numpy(input_sizes_np).int()
-						
-						#Put the CPC output through the DeepSpeech 
-						#input_lengths = torch.IntTensor(context.shape[1])
-						if args.cpc_model_path is not None: 
-							context = wav2vec.predict(inputs.transpose(1,2))
-							out = model(context)
-						else: 
-							out = model(inputs)
+
+						out = model(inputs)
 
 						float_out = out.float() 
 						
@@ -746,11 +630,7 @@ if __name__ == "__main__":
 								
 								#Put the CPC output through the DeepSpeech 
 								#input_lengths = torch.IntTensor(context.shape[1])
-								if args.cpc_model_path is not None: 
-									context = wav2vec.predict(inputs.transpose(1,2))
-									out = model(context)
-								else: 
-									out = model(inputs.transpose(1, 2))
+								out = model(inputs.transpose(1, 2))
 
 								float_out = out.float() 
 								
