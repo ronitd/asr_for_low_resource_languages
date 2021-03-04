@@ -254,106 +254,6 @@ def mfcc_collate(batch):
 	targets = torch.IntTensor(targets)
 	return inputs, targets, input_percentages, target_sizes
 
-def self_supervise_collate(batch): 
-	def func(p): 
-		return len(p) 
-
-	# print("Batch shape: {}".format(len(batch)))
-	# print("Batch [0]: {}".format(batch[0].shape))
-	#print("Batch: {}".format(batch))
-	batch = sorted(batch, key=lambda sample: len(sample), reverse=True) 
-
-	shortest_sample = min(batch, key=func) 
-	minibatch_size = len(batch) 
-	min_seqlength = len(shortest_sample)
-	if min_seqlength > 100000: 
-		min_seqlength = 100000
-
-	inputs = torch.zeros(minibatch_size, min_seqlength, 80)
-
-	for i in range(minibatch_size): 
-		sample = batch[i] 
-		seq_length = len(sample) 
-
-		#Here's where we should do the cropping
-		if len(sample) > min_seqlength: 
-			cropped_start = np.random.randint(low=0, high=seq_length-min_seqlength, size=1)[0]
-		else: 
-			cropped_start = 0
-		cropped_sample = sample[cropped_start:cropped_start+min_seqlength]
-		inputs[i].narrow(0,0,min_seqlength).copy_(torch.reshape(torch.from_numpy(cropped_sample), (-1, 80)))
-	return inputs
-
-class RawAudioDataset(Dataset): 
-	def __init__(self, wav_filenames, transcripts, labels, truncated=False):
-		self.wav_filenames = wav_filenames
-		self.transcripts = transcripts
-		self.labels_map = dict([(labels[i], i) for i in range(len(labels))])
-		self.truncated = truncated
-
-	def __len__(self): 
-		return len(self.wav_filenames)
-
-	def __getitem__(self, index): 
-		wav_filename = self.wav_filenames[index]
-		transcript = self.transcripts[index]
-		transcript = self.parse_transcript(transcript)
-		wav_file_raw = read_and_trim_audio(wav_filename, truncated=self.truncated)
-		return (wav_file_raw, transcript)
-
-	def parse_transcript(self, transcript): 
-		"""Convert transcript into a list of integers"""
-		transcript = list(filter(None, [self.labels_map.get(x) for x in list(transcript)]))
-		return transcript
-
-class RawAudioDataLoader(DataLoader): 
-	def __init__(self, *args, **kwargs): 
-		"""
-		Creates a data loader for RawAudioDatasets
-		"""
-		super(RawAudioDataLoader, self).__init__(*args, **kwargs) 
-		self.collate_fn = custom_collate
-
-class RawAudioBucketingSampler(Sampler): 
-	def __init__(self, data_source, batch_size=1): 
-		super(RawAudioBucketingSampler, self).__init__(data_source)
-		self.data_source = data_source 
-		ids = list(range(0, len(data_source))) #Each item in the dataset gets an id
-		#Generating bins -- each bin is from i to i+batch.
-		self.bins = [ids[i:i + batch_size] for i in range(0, len(ids), batch_size)]
-
-	def __iter__(self): 
-		for ids in self.bins: 
-			np.random.shuffle(ids)
-			yield ids 
-
-	def __len__(self): 
-		return len(self.bins) 
-
-	def shuffle(self): 
-		np.random.shuffle(self.bins)
-
-class RawAudioDataset_minlength(Dataset): 
-	def __init__(self, wav_filenames, transcripts, labels): 
-		self.wav_filenames = wav_filenames
-		self.transcripts = transcripts
-		self.labels_map = dict([(labels[i], i) for i in range(len(labels))]) 
-
-	def __len__(self): 
-		return len(self.wav_filenames)
-
-	def parse_transcript(self, transcript): 
-		"""Convert transcript into a list of integers"""
-		transcript = list(filter(None, [self.labels_map.get(x) for x in list(transcript)]))
-		return transcript
-
-	def __getitem__(self, index): 
-		wav_filename = self.wav_filenames[index]
-		transcript = self.transcripts[index]
-		transcript = self.parse_transcript(transcript)
-		wav_file_raw = read_and_pad_audio(wav_filename, 9600)
-		return (wav_file_raw, transcript)
-
 
 class MFCCDataset(Dataset): 
 	def __init__(self, wav_filenames, transcripts, labels): 
@@ -378,6 +278,7 @@ class MFCCDataset(Dataset):
 	def parse_transcript(self, transcript): 
 		transcript = list(filter(None, [self.labels_map.get(x) for x in list(transcript)]))
 		return transcript
+
 
 class PrecomputedMFCCDataset(Dataset): 
 	def __init__(self, mfcc_paths, transcripts, labels): 
@@ -427,6 +328,7 @@ class MFCCBucketingSampler(Sampler):
 	def shuffle(self): 
 		np.random.shuffle(self.bins)
 
+
 class LogMelDataset(Dataset):
 	def __init__(self, wav_filenames, transcripts, labels, use_preprocessed = True):
 		self.wav_filenames = wav_filenames
@@ -451,6 +353,7 @@ class LogMelDataset(Dataset):
 		transcript = list(filter(None, [self.labels_map.get(x) for x in list(transcript)]))
 		return transcript
 
+
 class LogMelMFCCDataset(Dataset):
 	def __init__(self, wav_filenames, transcripts, labels, use_preprocessed = False):
 		self.wav_filenames = wav_filenames
@@ -472,41 +375,6 @@ class LogMelMFCCDataset(Dataset):
 		transcript = list(filter(None, [self.labels_map.get(x) for x in list(transcript)]))
 		return transcript
 
-
-class LogMelUnlabeledDataset(Dataset):
-	def __init__(self, wav_filenames):
-		self.wav_filenames = wav_filenames
-
-	def __len__(self):
-		return len(self.wav_filenames)
-
-	def __getitem__(self, index):
-		wav_filename = self.wav_filenames[index]
-		filterbank = extract_logmel_unsupervised(wav_filename)
-		return filterbank
-
-class LogMelSelfSuperviseDataLoader(DataLoader): 
-	def __init__(self, *args, **kwargs): 
-		super(LogMelSelfSuperviseDataLoader, self).__init__(*args, **kwargs) 
-		self.collate_fn = self_supervise_collate
-
-class LogMelSelfSuperviseBucketingSampler(Sampler): 
-	def __init__(self, data_source, batch_size=1): 
-		super(LogMelSelfSuperviseBucketingSampler, self).__init__(data_source)
-		self.data_source = data_source 
-		ids = list(range(0, len(data_source)))
-		self.bins = [ids[i:i+batch_size] for i in range(0, len(ids), batch_size)]
-
-	def __iter__(self): 
-		for ids in self.bins: 
-			np.random.shuffle(ids) 
-			yield ids 
-
-	def __len__(self): 
-		return len(self.bins) 
-
-	def shuffle(self): 
-		np.random.shuffle(self.bins)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser() 
