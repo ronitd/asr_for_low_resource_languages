@@ -12,7 +12,7 @@ from tqdm import tqdm
 from deepspeech_src.cpc_data_loader_phoneme import MFCCDataset, MFCCBucketingSampler, MFCCDataLoader, \
     PrecomputedMFCCDataset, RawAudioDataset, RawAudioBucketingSampler, RawAudioDataLoader, LogMelDataset, \
     LogMelDataLoader, LogMelTriphoneDataset
-from deepspeech_src.decoder_ronit import GreedyDecoder, BeamCTCDecoder
+from deepspeech_src.decoder_triphone import GreedyDecoder, BeamCTCDecoder
 # from deepspeech_src.model import ResNextASR
 from deepspeech_src.resnext_v2_model import ResNextASR_v2, Encoder, Decoder
 # from deepspeech_src.test_model import ResNextASR_v2
@@ -171,9 +171,12 @@ if __name__ == "__main__":
                 args=args
             )
         else:
+            #print(len(args.triphone_to_int))
+            #print(args.triphone_to_int)
+            #exit()
             model = ResNextASR_v2(
                 num_features=128,
-                num_classes=len(labels),
+                num_classes=len(load_obj(args.triphone_to_int)),
                 dense_dim=args.dense_dim,
                 bottleneck_depth=args.bottleneck_depth,
                 args=args

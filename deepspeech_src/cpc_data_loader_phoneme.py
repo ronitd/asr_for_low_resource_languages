@@ -567,13 +567,14 @@ class LogMelTriphoneDataset(Dataset):
         self.transcripts = transcripts
         self.word_to_triphone_int = word_to_triphone_int
         self.use_preprocessed = use_preprocessed
+        #print(word_to_triphone_int)
 
     def __len__(self):
         return len(self.wav_filenames)
 
     def __getitem__(self, index):
         wav_filename = self.wav_filenames[index]
-        wav_filename = wav_filename.replace("Audios", "spectogram")
+        wav_filename = wav_filename.replace("Audios16KHz", "spectogram")
         wav_filename = wav_filename.replace("wav", "npy")
         transcript = self.transcripts[index]
         transcript = self.parse_transcript(transcript)
@@ -581,7 +582,7 @@ class LogMelTriphoneDataset(Dataset):
         return (filterbank, transcript)
 
     def parse_transcript(self, transcript):
-        transcript = re.split("( )", transcript)
+        transcript = re.split("( )", transcript.rstrip())
         t = []
         for x in transcript:
             if x in self.word_to_triphone_int:
